@@ -6,7 +6,7 @@ const MERCHANT_ID = '8SKBAV-VYF86F-7VP1MZ-LXEEG2';
 const PAYOUT_API_KEY = 'G9PXG9-XB1W57-NB794S-D8S5CH';
 const API_URL = 'https://api.oxapay.com';
 
-// Interfaces
+// Types
 interface CreatePaymentParams {
   amount: number;
   currency: string;
@@ -35,61 +35,44 @@ interface PayoutParams {
 }
 
 // Helper Functions
-function generateSignature(data: any, apiKey: string): string {
+function generateSignature(data: Record<string, any>, apiKey: string): string {
   const sortedParams = Object.keys(data)
     .sort()
-    .reduce((acc, key) => {
-      if (data[key] !== undefined && data[key] !== null) {
-        acc[key] = data[key];
-      }
-      return acc;
-    }, {} as any);
-
-  const signString = Object.entries(sortedParams)
-    .map(([key, value]) => `${key}:${value}`)
+    .map((key) => `${key}:${data[key]}`)
     .join('|');
 
-  return CryptoJS.HmacSHA256(signString, apiKey).toString();
+  return CryptoJS.HmacSHA256(sortedParams, apiKey).toString();
 }
 
 function generateNonce(): string {
-  return Math.random().toString(36).substring(7);
+  return uuidv4();
 }
 
 function getBaseUrl(): string {
-  return typeof window !== 'undefined' ? window.location.origin : 'https://yourdomain.com';
+  return 'https://paycan.vercel.app';
 }
 
-// Main API Functions
-export async function createPayment({
-  amount,
-  currency = 'USD',
-  order_id,
-  email,
-  description
-}: CreatePaymentParams) {
+// **1️⃣ Create Payment**
+export async function createPayment(params: CreatePaymentParams) {
   try {
     const baseUrl = getBaseUrl();
     const data = {
       merchant: MERCHANT_ID,
-      amount: amount.toFixed(2),
-      currency,
-      order_id,
-      email,
-      description: description || `Payment for Order #${order_id}`,
-      callback_url: `${baseUrl}/payment/callback`,
+      amount: params.amount.toFixed(2),
+      currency: params.currency,
+      order_id: params.order_id,
+      email: params.email,
+      description: params.description || `Payment for Order #${params.order_id}`,
+      callback_url: `${baseUrl}/api/payment/callback`,
       success_url: `${baseUrl}/payment/success`,
       fail_url: `${baseUrl}/payment/failed`,
       timestamp: Math.floor(Date.now() / 1000),
-      nonce: generateNonce()
+      nonce: generateNonce(),
     };
 
-    const sign = generateSignature(data, PAYOUT_API_KEY);
+    data['sign'] = generateSignature(data, API_KEY);
 
-    const response = await axios.post(`${API_URL}/merchant/payment/create`, {
-      ...data,
-      sign
-    });
+    const response = await axios.post(`${API_URL}/merchant/payment/create`, data);
 
     if (response.data?.status !== 'success') {
       throw new Error(response.data?.message || 'Payment creation failed');
@@ -97,38 +80,34 @@ export async function createPayment({
 
     return response.data;
   } catch (error: any) {
-    console.error('Payment creation error:', error);
-    throw new Error(error.response?.data?.message || 'Failed to create payment');
+    console.error('Payment creation error:', error.response?.data || error.message);
+    throw new Error('Failed to create payment');
   }
 }
 
-export async function createStaticWallet({
-  currency,
-  callback_url
-}: CreateStaticWalletParams) {
+// **2️⃣ Create Static Wallet**
+export async function createStaticWallet(params: CreateStaticWalletParams) {
   try {
     const data = {
       merchant: MERCHANT_ID,
-      currency,
-      callback_url,
+      currency: params.currency,
+      callback_url: params.callback_url,
       timestamp: Math.floor(Date.now() / 1000),
-      nonce: generateNonce()
+      nonce: generateNonce(),
     };
 
-    const sign = generateSignature(data, PAYOUT_API_KEY);
+    data['sign'] = generateSignature(data, API_KEY);
 
-    const response = await axios.post(`${API_URL}/merchant/wallet/static`, {
-      ...data,
-      sign
-    });
+    const response = await axios.post(`${API_URL}/merchant/wallet/static`, data);
 
     return response.data;
   } catch (error: any) {
-    console.error('Static wallet creation error:', error);
-    throw new Error(error.response?.data?.message || 'Failed to create static wallet');
+    console.error('Static wallet creation error:', error.response?.data || error.message);
+    throw new Error('Failed to create static wallet');
   }
 }
 
+// **3️⃣ Create White-Label Payment**
 export async function createWhiteLabel(params: CreateWhiteLabelParams) {
   try {
     const data = {
@@ -138,111 +117,102 @@ export async function createWhiteLabel(params: CreateWhiteLabelParams) {
       order_id: params.order_id,
       email: params.email,
       description: params.description,
-      callback_url: `${getBaseUrl()}/payment/callback`,
+      callback_url: `${getBaseUrl()}/api/payment/callback`,
       success_url: `${getBaseUrl()}/payment/success`,
       fail_url: `${getBaseUrl()}/payment/failed`,
       timestamp: Math.floor(Date.now() / 1000),
       nonce: generateNonce(),
-      design: params.design
+      design: params.design,
     };
 
-    const sign = generateSignature(data, PAYOUT_API_KEY);
+    data['sign'] = generateSignature(data, API_KEY);
 
-    const response = await axios.post(`${API_URL}/merchant/payment/whitelabel`, {
-      ...data,
-      sign
-    });
+    const response = await axios.post(`${API_URL}/merchant/payment/whitelabel`, data);
 
     return response.data;
   } catch (error: any) {
-    console.error('White label payment creation error:', error);
-    throw new Error(error.response?.data?.message || 'Failed to create white label payment');
+    console.error('White-label payment error:', error.response?.data || error.message);
+    throw new Error('Failed to create white-label payment');
   }
 }
 
-export async function createPayout({
-  currency,
-  amount,
-  address,
-  network
-}: PayoutParams) {
+// **4️⃣ Create Payout**
+export async function createPayout(params: PayoutParams) {
   try {
     const data = {
-      currency,
-      amount: amount.toFixed(8),
-      address,
-      network,
+      merchant: MERCHANT_ID,
+      currency: params.currency,
+      amount: params.amount.toFixed(8),
+      address: params.address,
+      network: params.network,
       timestamp: Math.floor(Date.now() / 1000),
-      nonce: generateNonce()
+      nonce: generateNonce(),
     };
 
-    const sign = generateSignature(data, PAYOUT_API_KEY);
+    data['sign'] = generateSignature(data, API_KEY);
 
-    const response = await axios.post(`${API_URL}/payout/send`, {
-      ...data,
-      sign
-    });
+    const response = await axios.post(`${API_URL}/payout/send`, data);
 
     return response.data;
   } catch (error: any) {
-    console.error('Payout creation error:', error);
-    throw new Error(error.response?.data?.message || 'Failed to create payout');
+    console.error('Payout creation error:', error.response?.data || error.message);
+    throw new Error('Failed to create payout');
   }
 }
 
+// **5️⃣ Get Payout Info**
 export async function getPayoutInfo(txid: string) {
   try {
     const data = {
+      merchant: MERCHANT_ID,
       txid,
       timestamp: Math.floor(Date.now() / 1000),
-      nonce: generateNonce()
+      nonce: generateNonce(),
     };
 
-    const sign = generateSignature(data, PAYOUT_API_KEY);
+    data['sign'] = generateSignature(data, API_KEY);
 
-    const response = await axios.post(`${API_URL}/payout/info`, {
-      ...data,
-      sign
-    });
+    const response = await axios.post(`${API_URL}/payout/info`, data);
 
     return response.data;
   } catch (error: any) {
-    console.error('Payout info error:', error);
-    throw new Error(error.response?.data?.message || 'Failed to get payout information');
+    console.error('Payout info error:', error.response?.data || error.message);
+    throw new Error('Failed to get payout info');
   }
 }
 
+// **6️⃣ Get Payout History**
 export async function getPayoutHistory() {
   try {
     const data = {
+      merchant: MERCHANT_ID,
       timestamp: Math.floor(Date.now() / 1000),
-      nonce: generateNonce()
+      nonce: generateNonce(),
     };
 
-    const sign = generateSignature(data, PAYOUT_API_KEY);
+    data['sign'] = generateSignature(data, API_KEY);
 
-    const response = await axios.post(`${API_URL}/payout/history`, {
-      ...data,
-      sign
-    });
+    const response = await axios.post(`${API_URL}/payout/history`, data);
 
     return response.data;
   } catch (error: any) {
-    console.error('Payout history error:', error);
-    throw new Error(error.response?.data?.message || 'Failed to get payout history');
+    console.error('Payout history error:', error.response?.data || error.message);
+    throw new Error('Failed to get payout history');
   }
 }
 
+// **7️⃣ Get Server IP**
 export async function getServerIP() {
   try {
     const response = await axios.get(`${API_URL}/system/ip`);
     return response.data;
   } catch (error: any) {
-    console.error('Get IP error:', error);
-    throw new Error(error.response?.data?.message || 'Failed to get server IP');
+    console.error('Get IP error:', error.response?.data || error.message);
+    throw new Error('Failed to get server IP');
   }
 }
 
+// **8️⃣ Generate Unique Order ID**
 export function generateOrderId(): string {
   return uuidv4().substring(0, 8).toUpperCase();
 }
