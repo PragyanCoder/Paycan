@@ -57,11 +57,7 @@ function generateNonce(): string {
 }
 
 function getBaseUrl(): string {
-  // Check if we're in production (custom domain)
-  if (window.location.hostname === 'quycan.software') {
-    return 'https://quycan.software';
-  }
-  return window.location.origin;
+  return typeof window !== 'undefined' ? window.location.origin : 'https://yourdomain.com';
 }
 
 // Main API Functions
@@ -88,20 +84,20 @@ export async function createPayment({
       nonce: generateNonce()
     };
 
-    const sign = generateSignature(data, MERCHANT_ID);
-    
-    const response = await axios.post(`${API_URL}/merchants/request`, {
+    const sign = generateSignature(data, PAYOUT_API_KEY);
+
+    const response = await axios.post(`${API_URL}/merchant/payment/create`, {
       ...data,
       sign
     });
 
-    if (response.data.status === 'error') {
-      throw new Error(response.data.message || 'Payment creation failed');
+    if (response.data?.status !== 'success') {
+      throw new Error(response.data?.message || 'Payment creation failed');
     }
 
     return response.data;
   } catch (error: any) {
-    console.error('Oxapay payment creation error:', error);
+    console.error('Payment creation error:', error);
     throw new Error(error.response?.data?.message || 'Failed to create payment');
   }
 }
@@ -119,9 +115,11 @@ export async function createStaticWallet({
       nonce: generateNonce()
     };
 
-    const response = await axios.post(`${API_URL}/merchants/request/staticaddress`, {
+    const sign = generateSignature(data, PAYOUT_API_KEY);
+
+    const response = await axios.post(`${API_URL}/merchant/wallet/static`, {
       ...data,
-      sign: generateSignature(data, MERCHANT_ID)
+      sign
     });
 
     return response.data;
@@ -140,17 +138,19 @@ export async function createWhiteLabel(params: CreateWhiteLabelParams) {
       order_id: params.order_id,
       email: params.email,
       description: params.description,
-      callback_url: `${window.location.origin}/payment/callback`,
-      success_url: `${window.location.origin}/payment/success`,
-      fail_url: `${window.location.origin}/payment/failed`,
+      callback_url: `${getBaseUrl()}/payment/callback`,
+      success_url: `${getBaseUrl()}/payment/success`,
+      fail_url: `${getBaseUrl()}/payment/failed`,
       timestamp: Math.floor(Date.now() / 1000),
       nonce: generateNonce(),
       design: params.design
     };
 
-    const response = await axios.post(`${API_URL}/merchants/request/whitelabel`, {
+    const sign = generateSignature(data, PAYOUT_API_KEY);
+
+    const response = await axios.post(`${API_URL}/merchant/payment/whitelabel`, {
       ...data,
-      sign: generateSignature(data, MERCHANT_ID)
+      sign
     });
 
     return response.data;
@@ -176,9 +176,11 @@ export async function createPayout({
       nonce: generateNonce()
     };
 
-    const response = await axios.post(`${API_URL}/api/send`, {
+    const sign = generateSignature(data, PAYOUT_API_KEY);
+
+    const response = await axios.post(`${API_URL}/payout/send`, {
       ...data,
-      sign: generateSignature(data, PAYOUT_API_KEY)
+      sign
     });
 
     return response.data;
@@ -196,9 +198,11 @@ export async function getPayoutInfo(txid: string) {
       nonce: generateNonce()
     };
 
-    const response = await axios.post(`${API_URL}/api/inquiry`, {
+    const sign = generateSignature(data, PAYOUT_API_KEY);
+
+    const response = await axios.post(`${API_URL}/payout/info`, {
       ...data,
-      sign: generateSignature(data, PAYOUT_API_KEY)
+      sign
     });
 
     return response.data;
@@ -215,9 +219,11 @@ export async function getPayoutHistory() {
       nonce: generateNonce()
     };
 
-    const response = await axios.post(`${API_URL}/api/list`, {
+    const sign = generateSignature(data, PAYOUT_API_KEY);
+
+    const response = await axios.post(`${API_URL}/payout/history`, {
       ...data,
-      sign: generateSignature(data, PAYOUT_API_KEY)
+      sign
     });
 
     return response.data;
@@ -229,7 +235,7 @@ export async function getPayoutHistory() {
 
 export async function getServerIP() {
   try {
-    const response = await axios.get(`${API_URL}/api/myip`);
+    const response = await axios.get(`${API_URL}/system/ip`);
     return response.data;
   } catch (error: any) {
     console.error('Get IP error:', error);
